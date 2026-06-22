@@ -9,6 +9,12 @@ from app.api.tenants import router as tenants_router
 from app.api.branches import router as branches_router
 from app.api.cameras import router as cameras_router
 from app.api.payments import router as payments_router
+from app.api.rules import router as rules_router
+from app.api.blacklist import router as blacklist_router
+from app.api.tamper import router as tamper_router
+from app.api.events import router as events_router
+
+from app.workers.mqtt_listener import FrigateMQTTWorker
 
 # إعداد السجلات (Logging)
 logging.basicConfig(level=logging.INFO)
@@ -29,18 +35,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# تضمين مسارات النظام الفرعية (API Routers)
+# تضمين مسارات النظام الفرعية (API Routers) لجميع المراحل
 app.include_router(tenants_router)
 app.include_router(branches_router)
 app.include_router(cameras_router)
 app.include_router(payments_router)
+app.include_router(rules_router)
+app.include_router(blacklist_router)
+app.include_router(tamper_router)
+app.include_router(events_router)
+
+# تهيئة عامل الاستماع لأحداث MQTT
+mqtt_worker = FrigateMQTTWorker()
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Initializing MQTT background listener...")
+    # نقوم بتشغيل عامل الاستماع في الخلفية
+    mqtt_worker.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down MQTT background listener...")
+    mqtt_worker.stop()
 
 @app.get("/")
 async def root():
     return {
         "app": "Eye of AI Central API",
         "status": "running",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "features": ["Multi-Tenancy", "Docker Swarm Provisioning", "Headscale VPN Automation", "AI Rules Engine", "pgvector Face Match", "Tamper Detection"]
     }
 
 # 1. اختبار اتصال خادم القراءة (Read Database Connection)
