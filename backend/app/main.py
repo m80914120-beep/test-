@@ -5,6 +5,10 @@ from sqlalchemy import text
 import logging
 
 from app.core.database import get_read_db, get_write_db
+from app.api.tenants import router as tenants_router
+from app.api.branches import router as branches_router
+from app.api.cameras import router as cameras_router
+from app.api.payments import router as payments_router
 
 # إعداد السجلات (Logging)
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +29,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# تضمين مسارات النظام الفرعية (API Routers)
+app.include_router(tenants_router)
+app.include_router(branches_router)
+app.include_router(cameras_router)
+app.include_router(payments_router)
+
 @app.get("/")
 async def root():
     return {
@@ -37,7 +47,6 @@ async def root():
 @app.get("/health/read-db")
 async def health_read_db(db: AsyncSession = Depends(get_read_db)):
     try:
-        # تنفيذ استعلام بسيط للتأكد من الاتصال بخادم القراءة
         result = await db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "read_replica_connected", "data": result.scalar()}
     except Exception as e:
@@ -48,9 +57,7 @@ async def health_read_db(db: AsyncSession = Depends(get_read_db)):
 @app.post("/health/write-db")
 async def health_write_db(db: AsyncSession = Depends(get_write_db)):
     try:
-        # تنفيذ استعلام بسيط للتأكد من القدرة على الكتابة (Master Node)
         result = await db.execute(text("SELECT 1"))
-        # نكتب رسالة تجريبية للتأكد من عمل الـ Transaction
         return {"status": "healthy", "database": "write_master_connected", "data": result.scalar()}
     except Exception as e:
         logger.error(f"Write DB connection error: {str(e)}")
