@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.docker-compose.env
+.ipynb_checkpoints
+
+# Node/React
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
