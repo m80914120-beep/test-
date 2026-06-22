@@ -7,6 +7,7 @@ import urllib.parse
 
 from app.core.database import get_write_db, get_read_db
 from app.services.docker_swarm import DockerSwarmManager
+from app.services.video_utils import probe_rtsp_stream
 
 router = APIRouter(prefix="/cameras", tags=["Cameras & Frigate Deployment"])
 swarm_manager = DockerSwarmManager()
@@ -135,9 +136,9 @@ async def get_frigate_status(branch_id: str, db: AsyncSession = Depends(get_read
     return swarm_manager.get_instance_status(tenant_id, branch_id)
 
 @router.post("/{camera_id}/test-connection")
-async def test_camera_connection(camera_id: str, db: AsyncSession = Depends(get_read_db)):
+async def test_camera_connection(camera_id: str, db: AsyncSession = Depends(get_write_db)):
     """
-    زر اختبار الاتصال: محاكاة فحص البث المباشر وجودة الاتصال
+    زر اختبار الاتصال: فحص البث المباشر وجودة الاتصال عبر FFprobe وتحديث حالة الكاميرا
     """
     query = text("SELECT name, rtsp_url FROM cameras WHERE id = :camera_id")
     res = await db.execute(query, {"camera_id": camera_id})
@@ -147,14 +148,38 @@ async def test_camera_connection(camera_id: str, db: AsyncSession = Depends(get_
         
     name, rtsp_url = row[0], row[1]
     
-    # محاكاة اختبار الاتصال بالبث
-    # في الإنتاج يمكننا استخدام FFprobe أو عمل socket test للتأكد من استجابة المنفذ 554
     logger.info(f"Testing stream connection to camera '{name}' via: {rtsp_url}")
-    return {
-        "camera_id": camera_id,
-        "rtsp_url": rtsp_url,
-        "status": "connected",
-        "bitrate_kbps": 2048,
-        "latency_ms": 45,
-        "message": "Stream connection test successful."
-    }
+    # تشغيل الفحص الحقيقي
+    probe_result = probe_rtsp_stream(rtsp_url)
+    
+    # تحديث حالة الكاميرا في الداتابيس بناءً على نتيجة الفحص
+    status_str = "online" if probe_result["connected"] else "offline"
+    update_query = text("""
+        UPDATE cameras 
+        SET status = :status, updated_at = CURRENT_TIMESTAMP
+        WHERE id = :camera_id
+    """)
+    await db.execute(update_query, {"status": status_str, "camera_id": camera_id})
+    
+    # إعداد الـ Response
+    if probe_result["connected"]:
+        return {
+            "camera_id": camera_id,
+            "rtsp_url": rtsp_url,
+            "status": "online",
+            "codec": probe_result.get("codec"),
+            "width": probe_result.get("width"),
+            "height": probe_result.get("height"),
+            "fps": probe_result.get("fps"),
+            "message": probe_result.get("message")
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "camera_id": camera_id,
+                "rtsp_url": rtsp_url,
+                "status": "offline",
+                "message": probe_result.get("message")
+            }
+        )
